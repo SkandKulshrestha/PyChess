@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 
 class ChessState:
@@ -27,6 +27,16 @@ class ChessState:
         ]
         self.white_to_move = True
         self.move_log = list()
+        self.white_king_location = (7, 4)
+        self.black_king_location = (0, 4)
+        self.checkmate = False
+        self.stalemate = False
+        self.is_king_in_check = False
+        self.pins = list()
+        self.checks = list()
+
+    def turn_to_move(self):
+        return 'white' if self.white_to_move else 'black'
 
     def make_move(self, move):
         self.board[move.start_row][move.start_col] = ''
@@ -34,14 +44,61 @@ class ChessState:
         self.move_log.append(move)
         self.white_to_move = not self.white_to_move
 
+        # update king position
+        if move.piece_moved == 'K':
+            self.white_king_location = (move.end_row, move.end_col)
+        elif move.piece_moved == 'k':
+            self.black_king_location = (move.end_row, move.end_col)
+
     def undo_move(self):
         if len(self.move_log) != 0:
             move = self.move_log.pop()
             self.board[move.start_row][move.start_col] = move.piece_moved
             self.board[move.end_row][move.end_col] = move.piece_captured
+            self.white_to_move = not self.white_to_move
+
+            # update king position
+            if move.piece_moved == 'K':
+                self.white_king_location = (move.start_row, move.start_col)
+            elif move.piece_moved == 'k':
+                self.black_king_location = (move.start_row, move.start_col)
+
+    def square_under_attack(self, row, col):
+        self.white_to_move = not self.white_to_move
+        opponent_moves = self.get_all_possible_moves()
+        self.white_to_move = not self.white_to_move
+        for move in opponent_moves:
+            if move.end_row == row and move.end_col == col:
+                return True
+        return False
+
+    def in_check(self):
+        if self.white_to_move:
+            return self.square_under_attack(*self.white_king_location)
+        else:
+            return self.square_under_attack(*self.black_king_location)
 
     def get_valid_moves(self):
-        return self.get_all_possible_moves()
+        moves = self.get_all_possible_moves()
+
+        for i in range(len(moves) - 1, -1, -1):
+            self.make_move(moves[i])
+            self.white_to_move = not self.white_to_move
+            if self.in_check():
+                moves.remove(moves[i])
+            self.white_to_move = not self.white_to_move
+            self.undo_move()
+
+        if len(moves) == 0:
+            if self.in_check():
+                self.checkmate = True
+            else:
+                self.stalemate = True
+        else:
+            self.checkmate = False
+            self.stalemate = False
+
+        return moves
 
     def get_all_possible_moves(self):
         moves = list()
@@ -54,6 +111,9 @@ class ChessState:
                     get_piece_move(row, col, moves)
 
         return moves
+
+    def is_ally(self, piece):
+        return piece.isupper() if self.white_to_move else piece.islower()
 
     def is_enemy(self, piece):
         return piece.islower() if self.white_to_move else piece.isupper()
@@ -163,6 +223,9 @@ class Move:
     def __eq__(self, other):
         if isinstance(other, Move):
             return self.move_id == other.move_id
+
+    def __repr__(self):
+        return self.get_chess_notation(long_algebraic_notation=True)
 
     def get_chess_notation(self, long_algebraic_notation: bool = False) -> str:
         result = self.piece_moved if self.piece_moved.upper() != 'P' else ''
